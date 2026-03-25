@@ -136,6 +136,9 @@
     </div>
 
     <script>
+        // Store credentials in memory (lost on page refresh, works with serverless)
+        let authHeader = localStorage.getItem('authHeader');
+        
         const searchInput = document.getElementById('searchInput');
         const resultsDiv = document.getElementById('results');
         const loginSection = document.getElementById('loginSection');
@@ -143,16 +146,10 @@
         const loginError = document.getElementById('loginError');
 
         // Check auth on load
-        async function checkAuth() {
-            try {
-                const res = await fetch('/auth/status', { credentials: 'include' });
-                const data = await res.json();
-                if (data.authenticated) {
-                    showApp();
-                } else {
-                    showLogin();
-                }
-            } catch (e) {
+        function checkAuth() {
+            if (authHeader) {
+                showApp();
+            } else {
                 showLogin();
             }
         }
@@ -160,41 +157,48 @@
         function showLogin() {
             loginSection.classList.remove('hidden');
             appSection.classList.add('hidden');
+            authHeader = null;
+            localStorage.removeItem('authHeader');
         }
 
         function showApp() {
             loginSection.classList.add('hidden');
             appSection.classList.remove('hidden');
-            searchInput.focus();
+            searchInput?.focus();
         }
 
-        async function login() {
+        function login() {
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
             
-            try {
-                const res = await fetch('/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: JSON.stringify({ username, password })
-                });
-                
+            // Create Basic Auth header
+            authHeader = 'Basic ' + btoa(username + ':' + password);
+            localStorage.setItem('authHeader', authHeader);
+            
+            // Test auth with a request
+            fetch('/api/candidates?limit=1', {
+                headers: { 'Authorization': authHeader }
+            }).then(res => {
                 if (res.ok) {
                     loginError.classList.add('hidden');
                     showApp();
                 } else {
                     loginError.textContent = 'Invalid credentials';
                     loginError.classList.remove('hidden');
+                    authHeader = null;
+                    localStorage.removeItem('authHeader');
                 }
-            } catch (e) {
+            }).catch(() => {
                 loginError.textContent = 'Login failed';
                 loginError.classList.remove('hidden');
-            }
+                authHeader = null;
+                localStorage.removeItem('authHeader');
+            });
         }
 
-        async function logout() {
-            await fetch('/logout', { method: 'POST', credentials: 'include' });
+        function logout() {
+            authHeader = null;
+            localStorage.removeItem('authHeader');
             showLogin();
         }
 
@@ -207,14 +211,21 @@
             const name = searchInput.value.trim();
             if (!name) return;
             
+            if (!authHeader) {
+                showLogin();
+                return;
+            }
+            
             resultsDiv.innerHTML = '<div class="loading">Searching...</div>';
             
             try {
                 const response = await fetch(`/api/candidates?name=${encodeURIComponent(name)}`, {
-                    credentials: 'include'
+                    headers: { 'Authorization': authHeader }
                 });
                 
                 if (response.status === 401) {
+                    loginError.textContent = 'Session expired. Please login again.';
+                    loginError.classList.remove('hidden');
                     showLogin();
                     return;
                 }

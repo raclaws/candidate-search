@@ -9,17 +9,23 @@ const PORT = process.env.PORT || 3000;
 // Security: Auth credentials from env
 const AUTH_USER = process.env.AUTH_USER || 'admin';
 const AUTH_PASS = process.env.AUTH_PASS || 'changeme';
-const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 
 // NocoDB config (read from env)
 const NOCODB_URL = (process.env.NOCODB_URL || 'ats.deadalus.site').replace(/^https?:\/\//, '');
 const NOCODB_TOKEN = process.env.NOCODB_TOKEN;
 const TABLE_ID = process.env.NOCODB_TABLE_ID;
 
-// Simple session store (in-memory, clears on restart)
-const sessions = new Map();
+// Security headers
+function securityHeaders(req, res, next) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self';");
+  next();
+}
 
-// Simple rate limiting
+// Simple rate limiting (per IP)
 const requestCounts = new Map();
 const RATE_LIMIT = 100;
 const RATE_WINDOW = 15 * 60 * 1000;
@@ -45,91 +51,42 @@ function rateLimit(req, res, next) {
   next();
 }
 
-// Session middleware
-function sessionMiddleware(req, res, next) {
-  const sessionId = req.headers.cookie?.match(/sessionId=([^;]+)/)?.[1];
-  if (sessionId && sessions.has(sessionId)) {
-    req.session = sessions.get(sessionId);
-  } else {
-    req.session = null;
-  }
-  next();
-}
-
-// Auth check middleware
-function requireAuth(req, res, next) {
-  if (req.session?.authenticated) {
-    return next();
-  }
-  // Check for Basic Auth fallback (for API clients)
-  const auth = req.headers.authorization;
-  if (auth?.startsWith('Basic ')) {
-    const credentials = Buffer.from(auth.slice(6), 'base64').toString().split(':');
-    if (credentials[0] === AUTH_USER && credentials[1] === AUTH_PASS) {
-      return next();
-    }
-  }
-  res.status(401).json({ error: 'Authentication required' });
-}
-
-// Security headers
-function securityHeaders(req, res, next) {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self';");
-  next();
-}
-
 // Apply middleware
 app.use(securityHeaders);
 app.use(rateLimit);
-app.use(sessionMiddleware);
 app.use(express.json({ limit: '10kb' }));
-
-// Login endpoint
-app.post('/login', (req, res) => {
-  const { username, password } = req.body;
-  if (username === AUTH_USER && password === AUTH_PASS) {
-    const sessionId = crypto.randomBytes(32).toString('hex');
-    sessions.set(sessionId, { authenticated: true, created: Date.now() });
-    res.setHeader('Set-Cookie', `sessionId=${sessionId}; HttpOnly; SameSite=Strict; Max-Age=86400`);
-    res.json({ success: true });
-  } else {
-    res.status(401).json({ error: 'Invalid credentials' });
-  }
-});
-
-// Logout endpoint
-app.post('/logout', (req, res) => {
-  const sessionId = req.headers.cookie?.match(/sessionId=([^;]+)/)?.[1];
-  if (sessionId) sessions.delete(sessionId);
-  res.setHeader('Set-Cookie', 'sessionId=; HttpOnly; SameSite=Strict; Max-Age=0');
-  res.json({ success: true });
-});
 
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Auth status endpoint - no auth required
-app.get('/auth/status', (req, res) => {
-  res.json({ authenticated: req.session?.authenticated || false });
-});
-
-// API routes - protected
-app.use('/api', requireAuth);
-
 // Input validation
 function sanitizeInput(str) {
   if (typeof str !== 'string') return '';
-  return str.replace(/[<>"']/g, '').trim();
+  return str.replace(/[<>'"]/g, '').trim();
 }
 
-// API proxy endpoint
-app.get('/api/candidates', (req, res) => {
+// Auth middleware - HTTP Basic Auth
+function requireAuth(req, res, next) {
+  const auth = req.headers.authorization;
+  
+  if (!auth || !auth.startsWith('Basic ')) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="Candidate Search"');
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  
+  const credentials = Buffer.from(auth.slice(6), 'base64').toString().split(':');
+  if (credentials[0] !== AUTH_USER || credentials[1] !== AUTH_PASS) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="Candidate Search"');
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+  
+  next();
+}
+
+// API proxy endpoint - protected
+app.get('/api/candidates', requireAuth, (req, res) => {
   if (!NOCODB_TOKEN || !TABLE_ID) {
     return res.status(500).json({ error: 'Server configuration error' });
   }
@@ -186,10 +143,10 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Serve static files (index.html and any assets)
+// Serve static files
 app.use(express.static('.'));
 
-// 404 handler - serve index.html for any other route (SPA behavior)
+// 404 handler
 app.use((req, res) => {
   if (req.path.startsWith('/api/')) {
     res.status(404).json({ error: 'Not found' });
