@@ -1,23 +1,28 @@
 const express = require('express');
 const https = require('https');
+const crypto = require('crypto');
 const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Security: Basic Auth credentials from env
+// Security: Auth credentials from env
 const AUTH_USER = process.env.AUTH_USER || 'admin';
 const AUTH_PASS = process.env.AUTH_PASS || 'changeme';
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 
-// NocoDB config (read from env or use defaults for local dev)
+// NocoDB config (read from env)
 const NOCODB_URL = (process.env.NOCODB_URL || 'ats.deadalus.site').replace(/^https?:\/\//, '');
 const NOCODB_TOKEN = process.env.NOCODB_TOKEN;
 const TABLE_ID = process.env.NOCODB_TABLE_ID;
 
+// Simple session store (in-memory, clears on restart)
+const sessions = new Map();
+
 // Simple rate limiting
 const requestCounts = new Map();
-const RATE_LIMIT = 100; // requests
-const RATE_WINDOW = 15 * 60 * 1000; // 15 minutes
+const RATE_LIMIT = 100;
+const RATE_WINDOW = 15 * 60 * 1000;
 
 function rateLimit(req, res, next) {
   const ip = req.ip || req.connection.remoteAddress;
@@ -33,70 +38,104 @@ function rateLimit(req, res, next) {
     } else {
       data.count++;
       if (data.count > RATE_LIMIT) {
-        return res.status(429).json({ error: 'Rate limit exceeded. Try again later.' });
+        return res.status(429).json({ error: 'Rate limit exceeded' });
       }
     }
   }
   next();
 }
 
-// Basic HTTP Auth middleware
-function basicAuth(req, res, next) {
-  const auth = req.headers.authorization;
-  
-  if (!auth) {
-    res.setHeader('WWW-Authenticate', 'Basic realm="Candidate Search"');
-    return res.status(401).json({ error: 'Authentication required' });
+// Session middleware
+function sessionMiddleware(req, res, next) {
+  const sessionId = req.headers.cookie?.match(/sessionId=([^;]+)/)?.[1];
+  if (sessionId && sessions.has(sessionId)) {
+    req.session = sessions.get(sessionId);
+  } else {
+    req.session = null;
   }
-  
-  const credentials = Buffer.from(auth.split(' ')[1], 'base64').toString().split(':');
-  const username = credentials[0];
-  const password = credentials[1];
-  
-  if (username !== AUTH_USER || password !== AUTH_PASS) {
-    res.setHeader('WWW-Authenticate', 'Basic realm="Candidate Search"');
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
-  
   next();
 }
 
-// Security headers middleware
+// Auth check middleware
+function requireAuth(req, res, next) {
+  if (req.session?.authenticated) {
+    return next();
+  }
+  // Check for Basic Auth fallback (for API clients)
+  const auth = req.headers.authorization;
+  if (auth?.startsWith('Basic ')) {
+    const credentials = Buffer.from(auth.slice(6), 'base64').toString().split(':');
+    if (credentials[0] === AUTH_USER && credentials[1] === AUTH_PASS) {
+      return next();
+    }
+  }
+  res.status(401).json({ error: 'Authentication required' });
+}
+
+// Security headers
 function securityHeaders(req, res, next) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  // CSP allows connections to same origin only (API calls are server-side)
   res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self';");
   next();
 }
 
-// Apply security middleware
+// Apply middleware
 app.use(securityHeaders);
 app.use(rateLimit);
-app.use(basicAuth);
+app.use(sessionMiddleware);
+app.use(express.json({ limit: '10kb' }));
 
-// Static files (protected by auth above)
-app.use(express.static('public'));
-app.use(express.json({ limit: '10kb' })); // Limit body size
+// Login endpoint
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+  if (username === AUTH_USER && password === AUTH_PASS) {
+    const sessionId = crypto.randomBytes(32).toString('hex');
+    sessions.set(sessionId, { authenticated: true, created: Date.now() });
+    res.setHeader('Set-Cookie', `sessionId=${sessionId}; HttpOnly; SameSite=Strict; Max-Age=86400`);
+    res.json({ success: true });
+  } else {
+    res.status(401).json({ error: 'Invalid credentials' });
+  }
+});
+
+// Logout endpoint
+app.post('/logout', (req, res) => {
+  const sessionId = req.headers.cookie?.match(/sessionId=([^;]+)/)?.[1];
+  if (sessionId) sessions.delete(sessionId);
+  res.setHeader('Set-Cookie', 'sessionId=; HttpOnly; SameSite=Strict; Max-Age=0');
+  res.json({ success: true });
+});
+
+// Check auth status
+app.get('/auth/status', (req, res) => {
+  res.json({ authenticated: req.session?.authenticated || false });
+});
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// API routes - protected
+app.use('/api', requireAuth);
 
 // Input validation
 function sanitizeInput(str) {
   if (typeof str !== 'string') return '';
-  // Remove any potentially dangerous characters
-  return str.replace(/[<>\"']/g, '').trim();
+  return str.replace(/[<>"']/g, '').trim();
 }
 
 // API proxy endpoint
 app.get('/api/candidates', (req, res) => {
-  // Validate config
   if (!NOCODB_TOKEN || !TABLE_ID) {
     return res.status(500).json({ error: 'Server configuration error' });
   }
   
   const searchName = sanitizeInput(req.query.name || '');
-  const limit = Math.min(parseInt(req.query.limit) || 20, 100); // Max 100
+  const limit = Math.min(parseInt(req.query.limit) || 20, 100);
   
   let apiPath = `/api/v2/tables/${TABLE_ID}/records?limit=${limit}`;
   if (searchName) {
@@ -112,7 +151,7 @@ app.get('/api/candidates', (req, res) => {
       'Accept': 'application/json',
       'User-Agent': 'CandidateSearch/1.0'
     },
-    timeout: 10000 // 10 second timeout
+    timeout: 10000
   };
   
   const request = https.request(options, (response) => {
@@ -120,7 +159,6 @@ app.get('/api/candidates', (req, res) => {
     response.on('data', chunk => data += chunk);
     response.on('end', () => {
       try {
-        // Validate JSON before sending
         JSON.parse(data);
         res.setHeader('Content-Type', 'application/json');
         res.status(response.statusCode).send(data);
@@ -143,10 +181,9 @@ app.get('/api/candidates', (req, res) => {
   request.end();
 });
 
-// Health check (no auth needed for monitoring)
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+// Static files - require auth
+app.use(requireAuth);
+app.use(express.static('public'));
 
 // 404 handler
 app.use((req, res) => {
@@ -160,6 +197,5 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Candidate Search server running at http://localhost:${PORT}`);
-  console.log(`Auth required: ${AUTH_USER} / [hidden]`);
+  console.log(`Server running at http://localhost:${PORT}`);
 });

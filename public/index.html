@@ -14,19 +14,18 @@
             margin: 0 auto;
         }
         h1 { color: #333; margin-bottom: 1.5rem; }
-        .search-box {
+        .login-box, .search-box {
             background: white;
             padding: 1.5rem;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             margin-bottom: 1.5rem;
         }
-        .search-input {
-            display: flex;
-            gap: 0.5rem;
-        }
-        input[type="text"] {
-            flex: 1;
+        .login-box h2 { margin-bottom: 1rem; color: #333; }
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; margin-bottom: 0.25rem; color: #666; }
+        input[type="text"], input[type="password"] {
+            width: 100%;
             padding: 0.75rem 1rem;
             border: 1px solid #ddd;
             border-radius: 6px;
@@ -43,6 +42,8 @@
         }
         button:hover { background: #0052a3; }
         button:disabled { background: #ccc; cursor: not-allowed; }
+        .search-input { display: flex; gap: 0.5rem; }
+        .search-input input { flex: 1; }
         .results {
             background: white;
             border-radius: 8px;
@@ -56,10 +57,7 @@
             color: #666;
             font-size: 0.9rem;
         }
-        .candidate {
-            padding: 1.5rem;
-            border-bottom: 1px solid #e9ecef;
-        }
+        .candidate { padding: 1.5rem; border-bottom: 1px solid #e9ecef; }
         .candidate:last-child { border-bottom: none; }
         .candidate-name {
             font-size: 1.1rem;
@@ -75,11 +73,6 @@
             color: #666;
             margin-bottom: 0.75rem;
         }
-        .candidate-meta span {
-            display: flex;
-            align-items: center;
-            gap: 0.25rem;
-        }
         .candidate-skills {
             display: flex;
             flex-wrap: wrap;
@@ -93,65 +86,123 @@
             border-radius: 4px;
             font-size: 0.8rem;
         }
-        .candidate-links {
-            display: flex;
-            gap: 1rem;
-        }
-        .candidate-links a {
-            color: #0066cc;
-            text-decoration: none;
-            font-size: 0.9rem;
-        }
+        .candidate-links { display: flex; gap: 1rem; }
+        .candidate-links a { color: #0066cc; text-decoration: none; font-size: 0.9rem; }
         .candidate-links a:hover { text-decoration: underline; }
-        .empty-state {
-            padding: 3rem;
-            text-align: center;
-            color: #666;
+        .empty-state { padding: 3rem; text-align: center; color: #666; }
+        .error { padding: 1rem; background: #ffebee; color: #c62828; border-radius: 6px; margin: 1rem; }
+        .loading { padding: 2rem; text-align: center; color: #666; }
+        .logout-btn {
+            float: right;
+            background: #666;
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
         }
-        .error {
-            padding: 1rem;
-            background: #ffebee;
-            color: #c62828;
-            border-radius: 6px;
-            margin: 1rem;
-        }
-        .loading {
-            padding: 2rem;
-            text-align: center;
-            color: #666;
-        }
+        .logout-btn:hover { background: #555; }
+        .hidden { display: none; }
     </style>
 </head>
 <body>
-    <h1>🔍 Candidate Search</h1>
-    
-    <div class="search-box">
-        <div class="search-input">
-            <input 
-                type="text" 
-                id="searchInput" 
-                placeholder="Search by name..."
-                autocomplete="off"
-            >
-            <button id="searchBtn" onclick="search()">Search</button>
+    <div id="loginSection">
+        <h1>🔒 Candidate Search</h1>
+        <div class="login-box">
+            <h2>Login Required</h2>
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="username" value="admin">
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="password" placeholder="Enter password">
+            </div>
+            <button onclick="login()">Login</button>
+            <div id="loginError" class="error hidden"></div>
         </div>
     </div>
-    
-    <div class="results" id="results">
-        <div class="empty-state">
-            Enter a name to search for candidates
+
+    <div id="appSection" class="hidden">
+        <h1>🔍 Candidate Search <button class="logout-btn" onclick="logout()">Logout</button></h1>
+        
+        <div class="search-box">
+            <div class="search-input">
+                <input type="text" id="searchInput" placeholder="Search by name..." autocomplete="off">
+                <button onclick="search()">Search</button>
+            </div>
+        </div>
+        
+        <div class="results" id="results">
+            <div class="empty-state">Enter a name to search for candidates</div>
         </div>
     </div>
 
     <script>
         const searchInput = document.getElementById('searchInput');
         const resultsDiv = document.getElementById('results');
-        
+        const loginSection = document.getElementById('loginSection');
+        const appSection = document.getElementById('appSection');
+        const loginError = document.getElementById('loginError');
+
+        // Check auth on load
+        async function checkAuth() {
+            try {
+                const res = await fetch('/auth/status', { credentials: 'include' });
+                const data = await res.json();
+                if (data.authenticated) {
+                    showApp();
+                } else {
+                    showLogin();
+                }
+            } catch (e) {
+                showLogin();
+            }
+        }
+
+        function showLogin() {
+            loginSection.classList.remove('hidden');
+            appSection.classList.add('hidden');
+        }
+
+        function showApp() {
+            loginSection.classList.add('hidden');
+            appSection.classList.remove('hidden');
+            searchInput.focus();
+        }
+
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            try {
+                const res = await fetch('/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ username, password })
+                });
+                
+                if (res.ok) {
+                    loginError.classList.add('hidden');
+                    showApp();
+                } else {
+                    loginError.textContent = 'Invalid credentials';
+                    loginError.classList.remove('hidden');
+                }
+            } catch (e) {
+                loginError.textContent = 'Login failed';
+                loginError.classList.remove('hidden');
+            }
+        }
+
+        async function logout() {
+            await fetch('/logout', { method: 'POST', credentials: 'include' });
+            showLogin();
+        }
+
         // Search on Enter key
-        searchInput.addEventListener('keypress', (e) => {
+        searchInput?.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') search();
         });
-        
+
         async function search() {
             const name = searchInput.value.trim();
             if (!name) return;
@@ -160,8 +211,14 @@
             
             try {
                 const response = await fetch(`/api/candidates?name=${encodeURIComponent(name)}`, {
-                    credentials: 'same-origin'
+                    credentials: 'include'
                 });
+                
+                if (response.status === 401) {
+                    showLogin();
+                    return;
+                }
+                
                 const data = await response.json();
                 
                 if (!response.ok) {
@@ -173,7 +230,7 @@
                 resultsDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
             }
         }
-        
+
         function renderResults(candidates) {
             if (candidates.length === 0) {
                 resultsDiv.innerHTML = '<div class="empty-state">No candidates found</div>';
@@ -215,20 +272,23 @@
             
             resultsDiv.innerHTML = countHtml + candidatesHtml;
         }
-        
+
         function escapeHtml(text) {
             if (!text) return '';
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         }
-        
+
         function formatSalary(salary) {
             if (!salary) return 'Salary not specified';
             const num = parseInt(salary);
             if (isNaN(num)) return escapeHtml(salary);
             return 'IDR ' + num.toLocaleString();
         }
+
+        // Check auth on page load
+        checkAuth();
     </script>
 </body>
 </html>
