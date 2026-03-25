@@ -21,7 +21,10 @@ function securityHeaders(req, res, next) {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self';");
+  // Allow requests from the same origin (works with CORS preflight)
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   next();
 }
 
@@ -55,6 +58,11 @@ function rateLimit(req, res, next) {
 app.use(securityHeaders);
 app.use(rateLimit);
 app.use(express.json({ limit: '10kb' }));
+
+// Handle CORS preflight
+app.options('*', (req, res) => {
+  res.sendStatus(200);
+});
 
 // Health check
 app.get('/health', (req, res) => {
