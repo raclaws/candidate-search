@@ -11,13 +11,5 @@
       "src": "/(.*)",
       "dest": "server.js"
     }
-  ],
-  "env": {
-    "NOCODB_URL": "@nocodb_url",
-    "NOCODB_TOKEN": "@nocodb_token",
-    "NOCODB_TABLE_ID": "@nocodb_table_id",
-    "AUTH_USER": "@auth_user",
-    "AUTH_PASS": "@auth_pass",
-    "SESSION_SECRET": "@session_secret"
-  }
+  ]
 }
