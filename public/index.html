@@ -159,7 +159,9 @@
             resultsDiv.innerHTML = '<div class="loading">Searching...</div>';
             
             try {
-                const response = await fetch(`/api/candidates?name=${encodeURIComponent(name)}`);
+                const response = await fetch(`/api/candidates?name=${encodeURIComponent(name)}`, {
+                    credentials: 'same-origin'
+                });
                 const data = await response.json();
                 
                 if (!response.ok) {
