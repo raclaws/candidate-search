@@ -15,9 +15,13 @@ Then open http://localhost:3000
 ## Database Connection
 
 **Provider:** NocoDB (Self-hosted)
-**URL:** https://ats.deadalus.site
-**Table:** Candidate_ALL
-**Base ID:** pj16ynf0v7ds1mh
+
+Configure via `.env` file (not committed):
+```
+NOCODB_URL=your_nocodb_url
+NOCODB_TOKEN=your_token
+NOCODB_TABLE_ID=your_table_id
+```
 
 ## Features
 
