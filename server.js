@@ -181,15 +181,21 @@ app.get('/api/candidates', (req, res) => {
   request.end();
 });
 
+// Serve index.html for root path
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
 // Serve static files (index.html and any assets)
 app.use(express.static('.'));
 
-// Protect API routes only
-app.use('/api', requireAuth);
-
-// 404 handler
+// 404 handler - serve index.html for any other route (SPA behavior)
 app.use((req, res) => {
-  res.status(404).json({ error: 'Not found' });
+  if (req.path.startsWith('/api/')) {
+    res.status(404).json({ error: 'Not found' });
+  } else {
+    res.sendFile(path.join(__dirname, 'index.html'));
+  }
 });
 
 // Error handler
