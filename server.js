@@ -181,8 +181,8 @@ app.get('/api/candidates', (req, res) => {
   request.end();
 });
 
-// Static files - publicly accessible (login page is in here)
-app.use(express.static('public'));
+// Serve static files (index.html and any assets)
+app.use(express.static('.'));
 
 // Protect API routes only
 app.use('/api', requireAuth);
