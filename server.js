@@ -109,14 +109,14 @@ app.post('/logout', (req, res) => {
   res.json({ success: true });
 });
 
-// Check auth status
-app.get('/auth/status', (req, res) => {
-  res.json({ authenticated: req.session?.authenticated || false });
-});
-
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Auth status endpoint - no auth required
+app.get('/auth/status', (req, res) => {
+  res.json({ authenticated: req.session?.authenticated || false });
 });
 
 // API routes - protected
@@ -181,9 +181,11 @@ app.get('/api/candidates', (req, res) => {
   request.end();
 });
 
-// Static files - require auth
-app.use(requireAuth);
+// Static files - publicly accessible (login page is in here)
 app.use(express.static('public'));
+
+// Protect API routes only
+app.use('/api', requireAuth);
 
 // 404 handler
 app.use((req, res) => {
