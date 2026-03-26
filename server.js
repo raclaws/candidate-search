@@ -2,7 +2,6 @@ const express = require('express');
 const https = require('https');
 const crypto = require('crypto');
 const path = require('path');
-const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -87,22 +86,6 @@ app.options('*', (req, res) => {
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// Debug endpoint (safe to remove later)
-app.get('/debug', (req, res) => {
-  try {
-    const files = fs.readdirSync(__dirname);
-    res.json({
-      dir: __dirname,
-      files: files,
-      styleExists: files.includes('style.css'),
-      appExists: files.includes('app.js'),
-      indexExists: files.includes('index.html')
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
 });
 
 // Input validation
