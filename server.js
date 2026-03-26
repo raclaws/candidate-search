@@ -174,7 +174,7 @@ app.get('/', (req, res) => {
 });
 
 // Serve static files
-app.use(express.static('.'));
+app.use(express.static(__dirname));
 
 // 404 handler
 app.use((req, res) => {
