@@ -190,7 +190,15 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Serve static files
+// Explicit static file routes (workaround for Vercel)
+app.get('/style.css', (req, res) => {
+  res.sendFile(path.join(__dirname, 'style.css'));
+});
+app.get('/app.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'app.js'));
+});
+
+// Serve static files (fallback for other files)
 app.use(express.static(__dirname));
 
 // 404 handler
