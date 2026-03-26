@@ -6,6 +6,8 @@ const resultsDiv = document.getElementById('results');
 const loginSection = document.getElementById('loginSection');
 const appSection = document.getElementById('appSection');
 const loginError = document.getElementById('loginError');
+const usernameInput = document.getElementById('username');
+const passwordInput = document.getElementById('password');
 
 // Pagination state
 let currentSearch = '';
@@ -252,12 +254,26 @@ function renderCandidateList(candidates) {
         const cloud = c['Cloud Expertise'] || '';
         if (cloud) skills.push(cloud);
         
+        // Generate email link if valid
+        const email = c.Email || '';
+        const emailLink = formatEmailLink(email);
+        const emailHtml = emailLink 
+            ? `<a href="${escapeHtml(emailLink)}" target="_blank">📧 ${escapeHtml(email)}</a>`
+            : `📧 ${escapeHtml(email || 'N/A')}`;
+        
+        // Generate WhatsApp link if valid
+        const phone = c['Phone Number'] || '';
+        const waLink = formatWhatsAppLink(phone);
+        const phoneHtml = waLink
+            ? `<a href="${escapeHtml(waLink)}" target="_blank">📱 ${escapeHtml(phone)}</a>`
+            : `📱 ${escapeHtml(phone || 'N/A')}`;
+        
         return `
             <div class="candidate">
                 <div class="candidate-name">${escapeHtml(c['Full-Name'] || 'Unknown')}</div>
                 <div class="candidate-meta">
-                    <span>📧 ${escapeHtml(c.Email || 'N/A')}</span>
-                    <span>📱 ${escapeHtml(c['Phone Number'] || 'N/A')}</span>
+                    <span>${emailHtml}</span>
+                    <span>${phoneHtml}</span>
                     <span>💼 ${escapeHtml(c['Total Years of Experience'] || '?')} years</span>
                     <span>💰 ${formatSalary(c['(Full-time) Expected Salary (Nett in IDR)'])}</span>
                 </div>
@@ -289,6 +305,47 @@ function formatSalary(salary) {
     return 'IDR ' + num.toLocaleString();
 }
 
+// Format phone number for WhatsApp link
+function formatWhatsAppLink(phone) {
+    if (!phone) return null;
+    // Remove all non-digit characters except leading +
+    let cleaned = phone.trim();
+    // Keep plus sign for country code detection
+    const hasPlus = cleaned.startsWith('+');
+    cleaned = cleaned.replace(/\D/g, '');
+    // If starts with 62 (Indonesia country code)
+    if (cleaned.startsWith('62')) {
+        // Already in correct format for wa.me/62xxxxxxxx
+        return `https://wa.me/${cleaned}`;
+    }
+    // If starts with 0 (Indonesian mobile), replace leading 0 with 62
+    if (cleaned.startsWith('0')) {
+        return `https://wa.me/62${cleaned.slice(1)}`;
+    }
+    // If starts with 8 (maybe missing 0), assume Indonesian mobile with 62
+    if (cleaned.startsWith('8') && cleaned.length >= 9) {
+        return `https://wa.me/62${cleaned}`;
+    }
+    // If starts with + but not 62, keep as is (wa.me supports international numbers)
+    if (hasPlus) {
+        // Remove leading + for wa.me URL
+        return `https://wa.me/${cleaned}`;
+    }
+    // Unknown format, return null (no link)
+    return null;
+}
+
+// Format email as mailto link
+function formatEmailLink(email) {
+    if (!email) return null;
+    // Simple email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (emailRegex.test(email.trim())) {
+        return `mailto:${email.trim()}`;
+    }
+    return null;
+}
+
 // Event listeners
 searchInput?.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') search();
@@ -297,6 +354,14 @@ searchInput?.addEventListener('keypress', (e) => {
 // Debounced search on input (300ms)
 const debouncedSearch = debounce(search, 300);
 searchInput?.addEventListener('input', debouncedSearch);
+
+// Login field Enter key support
+usernameInput?.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') login();
+});
+passwordInput?.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') login();
+});
 
 // Check auth on page load
 checkAuth();
