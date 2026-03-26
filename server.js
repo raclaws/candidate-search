@@ -11,7 +11,12 @@ const AUTH_USER = process.env.AUTH_USER || 'admin';
 const AUTH_PASS = process.env.AUTH_PASS || 'changeme';
 
 // NocoDB config (read from env)
-const NOCODB_URL = (process.env.NOCODB_URL || 'ats.deadalus.site').replace(/^https?:\/\//, '');
+let rawUrl = process.env.NOCODB_URL || 'ats.deadalus.site';
+if (rawUrl.startsWith('http://')) {
+  console.warn('Warning: NOCODB_URL uses HTTP, forcing HTTPS');
+  rawUrl = 'https://' + rawUrl.slice(7);
+}
+const NOCODB_URL = rawUrl.replace(/^https?:\/\//, '');
 const NOCODB_TOKEN = process.env.NOCODB_TOKEN;
 const TABLE_ID = process.env.NOCODB_TABLE_ID;
 
@@ -54,6 +59,18 @@ function rateLimit(req, res, next) {
     }
   }
   next();
+}
+
+// Clean up stale rate‑limit entries every 5 minutes (only in long‑running processes)
+if (!process.env.VERCEL) {
+  setInterval(() => {
+    const now = Date.now();
+    for (const [ip, data] of requestCounts.entries()) {
+      if (now > data.resetTime) {
+        requestCounts.delete(ip);
+      }
+    }
+  }, 5 * 60 * 1000);
 }
 
 // Apply middleware
@@ -102,9 +119,12 @@ app.get('/api/candidates', requireAuth, (req, res) => {
   }
   
   const searchName = sanitizeInput(req.query.name || '');
-  const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+  const limitParam = parseInt(req.query.limit, 10);
+  const limit = Math.min(isNaN(limitParam) ? 20 : limitParam, 100);
+  const offsetParam = parseInt(req.query.offset, 10);
+  const offset = isNaN(offsetParam) ? 0 : Math.max(0, offsetParam);
   
-  let apiPath = `/api/v2/tables/${TABLE_ID}/records?limit=${limit}`;
+  let apiPath = `/api/v2/tables/${TABLE_ID}/records?limit=${limit}&offset=${offset}`;
   if (searchName) {
     apiPath += `&where=(Full-Name,like,${encodeURIComponent('%' + searchName + '%')})`;
   }

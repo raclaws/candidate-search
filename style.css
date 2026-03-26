@@ -1,0 +1,146 @@
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            padding: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 { color: #333; margin-bottom: 1.5rem; }
+        .login-box, .search-box {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 1.5rem;
+        }
+        .login-box h2 { margin-bottom: 1rem; color: #333; }
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; margin-bottom: 0.25rem; color: #666; }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+        button {
+            padding: 0.75rem 1.5rem;
+            background: #0066cc;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+        button:hover { background: #0052a3; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .search-input { display: flex; gap: 0.5rem; }
+        .search-input input { flex: 1; }
+        .results {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .result-count {
+            padding: 1rem 1.5rem;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+            color: #666;
+            font-size: 0.9rem;
+        }
+        .candidate { padding: 1.5rem; border-bottom: 1px solid #e9ecef; }
+        .candidate:last-child { border-bottom: none; }
+        .candidate-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 0.5rem;
+        }
+        .candidate-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 0.75rem;
+        }
+        .candidate-skills {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+        }
+        .skill-tag {
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
+        .candidate-links { display: flex; gap: 1rem; }
+        .candidate-links a { color: #0066cc; text-decoration: none; font-size: 0.9rem; }
+        .candidate-links a:hover { text-decoration: underline; }
+        .empty-state { padding: 3rem; text-align: center; color: #666; }
+        .error { padding: 1rem; background: #ffebee; color: #c62828; border-radius: 6px; margin: 1rem; }
+        .loading { padding: 2rem; text-align: center; color: #666; }
+        .logout-btn {
+            float: right;
+            background: #666;
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+        }
+        .logout-btn:hover { background: #555; }
+        .hidden { display: none !important; }
+    
+
+/* Skeleton loading */
+.skeleton {
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  border-radius: 4px;
+}
+@keyframes skeleton-pulse {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.skeleton-line {
+  height: 1em;
+  margin-bottom: 0.5rem;
+}
+.skeleton-skills {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.skeleton-skill {
+  width: 60px;
+  height: 24px;
+  border-radius: 4px;
+}
+
+/* Load more button */
+.load-more-container {
+    padding: 1.5rem;
+    text-align: center;
+    border-top: 1px solid #e9ecef;
+}
+.load-more-button {
+    padding: 0.75rem 2rem;
+    background: #0066cc;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 1rem;
+}
+.load-more-button:hover {
+    background: #0052a3;
+}
+.load-more-button:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
