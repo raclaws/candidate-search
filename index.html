@@ -35,6 +35,23 @@
                 <input type="text" id="searchInput" placeholder="Search by name..." autocomplete="off">
                 <button onclick="search()">Search</button>
             </div>
+            <div class="filter-bar">
+                <div class="filter-chips" id="filterChips"></div>
+                <div class="add-filter-wrapper">
+                    <button class="add-filter-btn" onclick="toggleFilterMenu()">+ Add Filter</button>
+                    <div class="filter-menu hidden" id="filterMenu">
+                        <div class="filter-menu-item" onclick="addFilter('lang')">Programming Language</div>
+                        <div class="filter-menu-item" onclick="addFilter('cloud')">Cloud Expertise</div>
+                        <div class="filter-menu-item" onclick="addFilter('experience')">Years of Experience</div>
+                        <div class="filter-menu-item" onclick="addFilter('expectedSalary')">Expected Salary</div>
+                        <div class="filter-menu-item" onclick="addFilter('currentSalary')">Current Salary</div>
+                        <div class="filter-menu-item" onclick="addFilter('arrangement')">Working Arrangement</div>
+                        <div class="filter-menu-item" onclick="addFilter('notice')">Notice Period</div>
+                        <div class="filter-menu-item" onclick="addFilter('position')">Current Position</div>
+                        <div class="filter-menu-item" onclick="addFilter('tools')">Tools & Frameworks</div>
+                    </div>
+                </div>
+            </div>
         </div>
         
         <div class="results" id="results">

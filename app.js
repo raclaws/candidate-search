@@ -1,4 +1,3 @@
-// Store credentials in memory (lost on page refresh, works with serverless)
 let authHeader = localStorage.getItem('authHeader');
 
 const searchInput = document.getElementById('searchInput');
@@ -8,22 +7,34 @@ const appSection = document.getElementById('appSection');
 const loginError = document.getElementById('loginError');
 const usernameInput = document.getElementById('username');
 const passwordInput = document.getElementById('password');
+const filterChipsDiv = document.getElementById('filterChips');
+const filterMenu = document.getElementById('filterMenu');
 
 // Pagination state
-let currentSearch = '';
 let currentOffset = 0;
 let currentLimit = 20;
 let totalRows = 0;
 let isLoading = false;
 let loadMoreButton = null;
 
-// Check auth on load
+// Filter state
+let activeFilters = [];
+
+const FILTER_DEFINITIONS = {
+    lang: { label: 'Language', type: 'text', placeholder: 'e.g. Python' },
+    cloud: { label: 'Cloud', type: 'text', placeholder: 'e.g. AWS' },
+    experience: { label: 'Experience (yrs)', type: 'range' },
+    expectedSalary: { label: 'Expected Salary', type: 'range' },
+    currentSalary: { label: 'Current Salary', type: 'range' },
+    arrangement: { label: 'Arrangement', type: 'select', options: ['Remote', 'Hybrid', 'On-Site'] },
+    notice: { label: 'Notice Period', type: 'select', options: ['<1 Month', '1 Month', '2 Months', '3 Months'] },
+    position: { label: 'Position', type: 'text', placeholder: 'e.g. ML Engineer' },
+    tools: { label: 'Tools', type: 'text', placeholder: 'e.g. Docker' }
+};
+
+// Auth
 function checkAuth() {
-    if (authHeader) {
-        showApp();
-    } else {
-        showLogin();
-    }
+    if (authHeader) { showApp(); } else { showLogin(); }
 }
 
 function showLogin() {
@@ -44,12 +55,9 @@ function showApp() {
 function login() {
     const username = document.getElementById('username').value;
     const password = document.getElementById('password').value;
-    
-    // Create Basic Auth header
     authHeader = 'Basic ' + btoa(username + ':' + password);
     localStorage.setItem('authHeader', authHeader);
-    
-    // Test auth with a request
+
     fetch('/api/candidates?limit=1', {
         headers: { 'Authorization': authHeader }
     }).then(res => {
@@ -76,83 +84,151 @@ function logout() {
     showLogin();
 }
 
-// Debounce function
+// Filter menu
+function toggleFilterMenu() {
+    filterMenu.classList.toggle('hidden');
+}
+
+function closeFilterMenu() {
+    filterMenu.classList.add('hidden');
+}
+
+function addFilter(key) {
+    if (activeFilters.find(f => f.key === key)) {
+        closeFilterMenu();
+        return;
+    }
+    const def = FILTER_DEFINITIONS[key];
+    const filter = { key, value: '', min: '', max: '' };
+    activeFilters.push(filter);
+    renderFilterChips();
+    closeFilterMenu();
+}
+
+function removeFilter(key) {
+    activeFilters = activeFilters.filter(f => f.key !== key);
+    renderFilterChips();
+    triggerSearch();
+}
+
+function renderFilterChips() {
+    filterChipsDiv.innerHTML = activeFilters.map(f => {
+        const def = FILTER_DEFINITIONS[f.key];
+        let inputHtml = '';
+
+        if (def.type === 'text') {
+            inputHtml = `<input type="text" placeholder="${def.placeholder}" value="${escapeHtml(f.value)}" onchange="updateFilter('${f.key}', this.value)" onkeypress="if(event.key==='Enter')triggerSearch()">`;
+        } else if (def.type === 'range') {
+            inputHtml = `<span class="filter-chip-range">
+                <input type="number" placeholder="Min" value="${f.min}" onchange="updateFilterRange('${f.key}', 'min', this.value)" onkeypress="if(event.key==='Enter')triggerSearch()">
+                <span>–</span>
+                <input type="number" placeholder="Max" value="${f.max}" onchange="updateFilterRange('${f.key}', 'max', this.value)" onkeypress="if(event.key==='Enter')triggerSearch()">
+            </span>`;
+        } else if (def.type === 'select') {
+            const opts = def.options.map(o => `<option value="${o}" ${f.value === o ? 'selected' : ''}>${o}</option>`).join('');
+            inputHtml = `<select onchange="updateFilter('${f.key}', this.value); triggerSearch()"><option value="">Any</option>${opts}</select>`;
+        }
+
+        return `<div class="filter-chip">
+            <span class="filter-chip-label">${def.label}</span>
+            ${inputHtml}
+            <button class="filter-chip-remove" onclick="removeFilter('${f.key}')">&times;</button>
+        </div>`;
+    }).join('');
+}
+
+function updateFilter(key, value) {
+    const f = activeFilters.find(f => f.key === key);
+    if (f) f.value = value;
+}
+
+function updateFilterRange(key, which, value) {
+    const f = activeFilters.find(f => f.key === key);
+    if (f) f[which] = value;
+}
+
+// Build query params from filters
+function buildFilterParams() {
+    const params = new URLSearchParams();
+    const name = searchInput.value.trim();
+    if (name) params.set('name', name);
+
+    for (const f of activeFilters) {
+        const def = FILTER_DEFINITIONS[f.key];
+        if (def.type === 'text' && f.value) {
+            params.set(f.key === 'lang' ? 'lang' : f.key === 'cloud' ? 'cloud' : f.key === 'position' ? 'position' : 'tools', f.value);
+        } else if (def.type === 'select' && f.value) {
+            params.set(f.key === 'arrangement' ? 'arrangement' : 'notice', f.value);
+        } else if (def.type === 'range') {
+            if (f.key === 'experience') {
+                if (f.min) params.set('expMin', f.min);
+                if (f.max) params.set('expMax', f.max);
+            } else if (f.key === 'expectedSalary') {
+                if (f.min) params.set('salaryMin', f.min);
+                if (f.max) params.set('salaryMax', f.max);
+            } else if (f.key === 'currentSalary') {
+                if (f.min) params.set('currentSalaryMin', f.min);
+                if (f.max) params.set('currentSalaryMax', f.max);
+            }
+        }
+    }
+    return params;
+}
+
+// Debounce
 function debounce(func, wait) {
     let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
+    return function(...args) {
         clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
+        timeout = setTimeout(() => func(...args), wait);
     };
 }
 
-// Skeleton loading HTML
+// Skeleton loading
 function renderSkeleton(count = 5) {
-    let skeletonHtml = '';
+    let html = '';
     for (let i = 0; i < count; i++) {
-        skeletonHtml += `
-        <div class="candidate skeleton">
+        html += `<div class="candidate skeleton">
             <div class="skeleton-line" style="width: 60%;"></div>
-            <div class="candidate-meta">
-                <span class="skeleton-line" style="width: 20%;"></span>
-                <span class="skeleton-line" style="width: 20%;"></span>
-                <span class="skeleton-line" style="width: 15%;"></span>
-                <span class="skeleton-line" style="width: 25%;"></span>
-            </div>
-            <div class="skeleton-skills">
-                <div class="skeleton-skill skeleton"></div>
-                <div class="skeleton-skill skeleton"></div>
-                <div class="skeleton-skill skeleton"></div>
-            </div>
-            <div class="candidate-links">
-                <span class="skeleton-line" style="width: 50px;"></span>
-                <span class="skeleton-line" style="width: 40px;"></span>
-            </div>
-        </div>
-        `;
+            <div class="candidate-meta"><span class="skeleton-line" style="width: 20%;"></span><span class="skeleton-line" style="width: 20%;"></span></div>
+            <div class="skeleton-skills"><div class="skeleton-skill skeleton"></div><div class="skeleton-skill skeleton"></div></div>
+        </div>`;
     }
-    return skeletonHtml;
+    return html;
 }
 
-// Perform search (first page)
+// Search
+function triggerSearch() {
+    search();
+}
+
 async function search() {
-    const name = searchInput.value.trim();
-    if (!name) return;
-    
-    if (!authHeader) {
-        showLogin();
-        return;
-    }
-    
-    currentSearch = name;
+    const params = buildFilterParams();
+    if (params.toString() === '' && !searchInput.value.trim()) return;
+
+    if (!authHeader) { showLogin(); return; }
+
     currentOffset = 0;
     totalRows = 0;
     isLoading = true;
-    
-    // Clear previous results and show skeleton
     resultsDiv.innerHTML = '<div class="result-count">Searching...</div>' + renderSkeleton();
-    
+
     try {
-        const response = await fetch(`/api/candidates?name=${encodeURIComponent(name)}&offset=0&limit=${currentLimit}`, {
+        params.set('offset', '0');
+        params.set('limit', String(currentLimit));
+        const response = await fetch(`/api/candidates?${params.toString()}`, {
             headers: { 'Authorization': authHeader }
         });
-        
+
         if (response.status === 401) {
             loginError.textContent = 'Session expired. Please login again.';
             loginError.classList.remove('hidden');
             showLogin();
             return;
         }
-        
+
         const data = await response.json();
-        
-        if (!response.ok) {
-            throw new Error(data.error || 'Search failed');
-        }
-        
+        if (!response.ok) throw new Error(data.error || 'Search failed');
         renderResults(data, false);
     } catch (error) {
         resultsDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
@@ -161,31 +237,28 @@ async function search() {
     }
 }
 
-// Load more results
 async function loadMore() {
     if (!authHeader || isLoading) return;
-    
     isLoading = true;
     if (loadMoreButton) loadMoreButton.disabled = true;
-    
+
     try {
-        const response = await fetch(`/api/candidates?name=${encodeURIComponent(currentSearch)}&offset=${currentOffset}&limit=${currentLimit}`, {
+        const params = buildFilterParams();
+        params.set('offset', String(currentOffset));
+        params.set('limit', String(currentLimit));
+        const response = await fetch(`/api/candidates?${params.toString()}`, {
             headers: { 'Authorization': authHeader }
         });
-        
+
         if (response.status === 401) {
             loginError.textContent = 'Session expired. Please login again.';
             loginError.classList.remove('hidden');
             showLogin();
             return;
         }
-        
+
         const data = await response.json();
-        
-        if (!response.ok) {
-            throw new Error(data.error || 'Load more failed');
-        }
-        
+        if (!response.ok) throw new Error(data.error || 'Load more failed');
         renderResults(data, true);
     } catch (error) {
         resultsDiv.innerHTML += `<div class="error">Error loading more: ${error.message}</div>`;
@@ -195,99 +268,102 @@ async function loadMore() {
     }
 }
 
-// Render results (append if append = true)
-function renderResults(data, append = false) {
+// Render results
+function renderResults(data, append) {
     const candidates = data.list || [];
     const pageInfo = data.pageInfo || {};
     totalRows = pageInfo.totalRows || candidates.length;
-    
+
     if (!append) {
-        // First page
         if (candidates.length === 0) {
             resultsDiv.innerHTML = '<div class="empty-state">No candidates found</div>';
             return;
         }
-        
         const countHtml = `<div class="result-count">Found ${totalRows} candidate${totalRows !== 1 ? 's' : ''}</div>`;
-        const candidatesHtml = renderCandidateList(candidates);
-        resultsDiv.innerHTML = countHtml + candidatesHtml;
+        resultsDiv.innerHTML = countHtml + renderCandidateList(candidates);
     } else {
-        // Append more candidates
-        const candidatesHtml = renderCandidateList(candidates);
-        // Remove existing load more button if present
-        const existingButton = resultsDiv.querySelector('.load-more-button');
-        if (existingButton) existingButton.remove();
-        // Append new candidates
-        resultsDiv.insertAdjacentHTML('beforeend', candidatesHtml);
+        const existing = resultsDiv.querySelector('.load-more-container');
+        if (existing) existing.remove();
+        resultsDiv.insertAdjacentHTML('beforeend', renderCandidateList(candidates));
     }
-    
-    // Update offset
+
     currentOffset += candidates.length;
-    
-    // Show load more button if there are more results
+
     if (currentOffset < totalRows) {
         const remaining = totalRows - currentOffset;
-        const loadMoreHtml = `
-            <div class="load-more-container" style="padding: 1.5rem; text-align: center;">
-                <button class="load-more-button" onclick="loadMore()">
-                    Load ${remaining > currentLimit ? currentLimit : remaining} more of ${remaining} remaining
-                </button>
-            </div>
-        `;
+        const loadMoreHtml = `<div class="load-more-container">
+            <button class="load-more-button" onclick="loadMore()">Load ${remaining > currentLimit ? currentLimit : remaining} more of ${remaining} remaining</button>
+        </div>`;
         resultsDiv.insertAdjacentHTML('beforeend', loadMoreHtml);
         loadMoreButton = resultsDiv.querySelector('.load-more-button');
-    } else if (!append) {
-        // No more results, ensure no load button
-        const existingButton = resultsDiv.querySelector('.load-more-button');
-        if (existingButton) existingButton.remove();
     }
 }
 
-// Render candidate list HTML
+// Render candidate cards
 function renderCandidateList(candidates) {
     return candidates.map(c => {
-        const skills = (c['Programming Language (professionally used)'] || '')
+        const langs = (c['Programming Language (professionally used)'] || '')
             .split(/,|;/)
             .map(s => s.trim())
             .filter(s => s);
-        
+
+        const tools = (c['Other professional related tools used'] || '')
+            .split(/,|;/)
+            .map(s => s.trim())
+            .filter(s => s);
+
         const cloud = c['Cloud Expertise'] || '';
-        if (cloud) skills.push(cloud);
-        
-        // Generate email link if valid
+        const position = c['Current Formal Positions'] || '';
+        const arrangement = c['Working arrangement preferences'] || '';
+        const notice = c['(Full-time) Notice Period'] || '';
+        const currentSalary = c['(Full-time) Current Salary (Nett in IDR)'];
+        const expectedSalary = c['(Full-time) Expected Salary (Nett in IDR)'];
+
         const email = c.Email || '';
         const emailLink = formatEmailLink(email);
-        const emailHtml = emailLink 
+        const emailHtml = emailLink
             ? `<a href="${escapeHtml(emailLink)}" target="_blank">📧 ${escapeHtml(email)}</a>`
             : `📧 ${escapeHtml(email || 'N/A')}`;
-        
-        // Generate WhatsApp link if valid
+
         const phone = c['Phone Number'] || '';
         const waLink = formatWhatsAppLink(phone);
         const phoneHtml = waLink
             ? `<a href="${escapeHtml(waLink)}" target="_blank">📱 ${escapeHtml(phone)}</a>`
             : `📱 ${escapeHtml(phone || 'N/A')}`;
-        
-        return `
-            <div class="candidate">
-                <div class="candidate-name">${escapeHtml(c['Full-Name'] || 'Unknown')}</div>
-                <div class="candidate-meta">
-                    <span>${emailHtml}</span>
-                    <span>${phoneHtml}</span>
-                    <span>💼 ${escapeHtml(c['Total Years of Experience'] || '?')} years</span>
-                    <span>💰 ${formatSalary(c['(Full-time) Expected Salary (Nett in IDR)'])}</span>
-                </div>
-                <div class="candidate-skills">
-                    ${skills.map(s => `<span class="skill-tag">${escapeHtml(s)}</span>`).join('')}
-                </div>
-                <div class="candidate-links">
-                    ${c['LinkedIn Link'] ? `<a href="${escapeHtml(c['LinkedIn Link'])}" target="_blank">LinkedIn</a>` : ''}
-                    ${c['Upload CV'] ? `<a href="${escapeHtml(c['Upload CV'])}" target="_blank">CV</a>` : ''}
-                    ${c['Portfolio Link (if any)'] ? `<a href="${escapeHtml(c['Portfolio Link (if any)'])}" target="_blank">Portfolio</a>` : ''}
-                    ${c.DLink ? `<a href="${escapeHtml(c.DLink)}" target="_blank">Doss</a>` : ''}
-                </div>
+
+        const badgesHtml = [
+            arrangement ? `<span class="badge badge-arrangement">${escapeHtml(arrangement)}</span>` : '',
+            notice ? `<span class="badge badge-notice">${escapeHtml(notice)}</span>` : '',
+            cloud ? `<span class="badge badge-cloud">☁️ ${escapeHtml(cloud)}</span>` : ''
+        ].filter(b => b).join('');
+
+        const salaryHtml = (currentSalary || expectedSalary) ? `<div class="candidate-salary">
+            💰 ${currentSalary ? `<span class="salary-current">Current: ${formatSalary(currentSalary)}</span>` : ''}
+            ${currentSalary && expectedSalary ? '<span class="salary-arrow">→</span>' : ''}
+            ${expectedSalary ? `<span class="salary-expected">Expected: ${formatSalary(expectedSalary)}</span>` : ''}
+        </div>` : '';
+
+        const langsHtml = langs.map(s => `<span class="skill-tag">${escapeHtml(s)}</span>`).join('');
+        const toolsHtml = tools.map(s => `<span class="skill-tag-tool">${escapeHtml(s)}</span>`).join('');
+
+        return `<div class="candidate">
+            <div class="candidate-name">${escapeHtml(c['Full-Name'] || 'Unknown')}</div>
+            ${position ? `<div class="candidate-position">${escapeHtml(position)}</div>` : ''}
+            <div class="candidate-badges">${badgesHtml}</div>
+            <div class="candidate-meta">
+                <span>${emailHtml}</span>
+                <span>${phoneHtml}</span>
+                <span>💼 ${escapeHtml(c['Total Years of Experience'] || '?')} years</span>
             </div>
-        `;
+            ${salaryHtml}
+            <div class="candidate-skills">${langsHtml}${toolsHtml}</div>
+            <div class="candidate-links">
+                ${c['LinkedIn Link'] ? `<a href="${escapeHtml(c['LinkedIn Link'])}" target="_blank">LinkedIn</a>` : ''}
+                ${c['Upload CV'] ? `<a href="${escapeHtml(c['Upload CV'])}" target="_blank">CV</a>` : ''}
+                ${c['Portfolio Link (if any)'] ? `<a href="${escapeHtml(c['Portfolio Link (if any)'])}" target="_blank">Portfolio</a>` : ''}
+                ${c.DLink ? `<a href="${escapeHtml(c.DLink)}" target="_blank">Doss</a>` : ''}
+            </div>
+        </div>`;
     }).join('');
 }
 
@@ -299,50 +375,27 @@ function escapeHtml(text) {
 }
 
 function formatSalary(salary) {
-    if (!salary) return 'Salary not specified';
+    if (!salary) return '';
     const num = parseInt(salary);
     if (isNaN(num)) return escapeHtml(salary);
     return 'IDR ' + num.toLocaleString();
 }
 
-// Format phone number for WhatsApp link
 function formatWhatsAppLink(phone) {
     if (!phone) return null;
-    // Remove all non-digit characters except leading +
     let cleaned = phone.trim();
-    // Keep plus sign for country code detection
     const hasPlus = cleaned.startsWith('+');
     cleaned = cleaned.replace(/\D/g, '');
-    // If starts with 62 (Indonesia country code)
-    if (cleaned.startsWith('62')) {
-        // Already in correct format for wa.me/62xxxxxxxx
-        return `https://wa.me/${cleaned}`;
-    }
-    // If starts with 0 (Indonesian mobile), replace leading 0 with 62
-    if (cleaned.startsWith('0')) {
-        return `https://wa.me/62${cleaned.slice(1)}`;
-    }
-    // If starts with 8 (maybe missing 0), assume Indonesian mobile with 62
-    if (cleaned.startsWith('8') && cleaned.length >= 9) {
-        return `https://wa.me/62${cleaned}`;
-    }
-    // If starts with + but not 62, keep as is (wa.me supports international numbers)
-    if (hasPlus) {
-        // Remove leading + for wa.me URL
-        return `https://wa.me/${cleaned}`;
-    }
-    // Unknown format, return null (no link)
+    if (cleaned.startsWith('62')) return `https://wa.me/${cleaned}`;
+    if (cleaned.startsWith('0')) return `https://wa.me/62${cleaned.slice(1)}`;
+    if (cleaned.startsWith('8') && cleaned.length >= 9) return `https://wa.me/62${cleaned}`;
+    if (hasPlus) return `https://wa.me/${cleaned}`;
     return null;
 }
 
-// Format email as mailto link
 function formatEmailLink(email) {
     if (!email) return null;
-    // Simple email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (emailRegex.test(email.trim())) {
-        return `mailto:${email.trim()}`;
-    }
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return `mailto:${email.trim()}`;
     return null;
 }
 
@@ -351,11 +404,9 @@ searchInput?.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') search();
 });
 
-// Debounced search on input (300ms)
 const debouncedSearch = debounce(search, 300);
 searchInput?.addEventListener('input', debouncedSearch);
 
-// Login field Enter key support
 usernameInput?.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') login();
 });
@@ -363,5 +414,11 @@ passwordInput?.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') login();
 });
 
-// Check auth on page load
+// Close filter menu on outside click
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.add-filter-wrapper')) {
+        closeFilterMenu();
+    }
+});
+
 checkAuth();

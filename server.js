@@ -117,16 +117,83 @@ app.get('/api/candidates', requireAuth, (req, res) => {
   if (!NOCODB_TOKEN || !TABLE_ID) {
     return res.status(500).json({ error: 'Server configuration error' });
   }
-  
+
   const searchName = sanitizeInput(req.query.name || '');
   const limitParam = parseInt(req.query.limit, 10);
   const limit = Math.min(isNaN(limitParam) ? 20 : limitParam, 100);
   const offsetParam = parseInt(req.query.offset, 10);
   const offset = isNaN(offsetParam) ? 0 : Math.max(0, offsetParam);
-  
-  let apiPath = `/api/v2/tables/${TABLE_ID}/records?limit=${limit}&offset=${offset}`;
+
+  // Build where clauses from all filters
+  const conditions = [];
+
   if (searchName) {
-    apiPath += `&where=(Full-Name,like,${encodeURIComponent('%' + searchName + '%')})`;
+    conditions.push(`(Full-Name,like,%${searchName}%)`);
+  }
+
+  const lang = sanitizeInput(req.query.lang || '');
+  if (lang) {
+    conditions.push(`(Programming Language (professionally used),like,%${lang}%)`);
+  }
+
+  const cloud = sanitizeInput(req.query.cloud || '');
+  if (cloud) {
+    conditions.push(`(Cloud Expertise,like,%${cloud}%)`);
+  }
+
+  const expMin = parseInt(req.query.expMin, 10);
+  if (!isNaN(expMin)) {
+    conditions.push(`(Total Years of Experience,gte,${expMin})`);
+  }
+
+  const expMax = parseInt(req.query.expMax, 10);
+  if (!isNaN(expMax)) {
+    conditions.push(`(Total Years of Experience,lte,${expMax})`);
+  }
+
+  const salaryMin = parseInt(req.query.salaryMin, 10);
+  if (!isNaN(salaryMin)) {
+    conditions.push(`((Full-time) Expected Salary (Nett in IDR),gte,${salaryMin})`);
+  }
+
+  const salaryMax = parseInt(req.query.salaryMax, 10);
+  if (!isNaN(salaryMax)) {
+    conditions.push(`((Full-time) Expected Salary (Nett in IDR),lte,${salaryMax})`);
+  }
+
+  const currentSalaryMin = parseInt(req.query.currentSalaryMin, 10);
+  if (!isNaN(currentSalaryMin)) {
+    conditions.push(`((Full-time) Current Salary (Nett in IDR),gte,${currentSalaryMin})`);
+  }
+
+  const currentSalaryMax = parseInt(req.query.currentSalaryMax, 10);
+  if (!isNaN(currentSalaryMax)) {
+    conditions.push(`((Full-time) Current Salary (Nett in IDR),lte,${currentSalaryMax})`);
+  }
+
+  const arrangement = sanitizeInput(req.query.arrangement || '');
+  if (arrangement) {
+    conditions.push(`(Working arrangement preferences,like,%${arrangement}%)`);
+  }
+
+  const notice = sanitizeInput(req.query.notice || '');
+  if (notice) {
+    conditions.push(`((Full-time) Notice Period,like,%${notice}%)`);
+  }
+
+  const position = sanitizeInput(req.query.position || '');
+  if (position) {
+    conditions.push(`(Current Formal Positions,like,%${position}%)`);
+  }
+
+  const tools = sanitizeInput(req.query.tools || '');
+  if (tools) {
+    conditions.push(`(Other professional related tools used,like,%${tools}%)`);
+  }
+
+  let apiPath = `/api/v2/tables/${TABLE_ID}/records?limit=${limit}&offset=${offset}`;
+  if (conditions.length > 0) {
+    apiPath += `&where=${encodeURIComponent(conditions.join('~and'))}`;
   }
   
   const options = {
