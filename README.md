@@ -1,6 +1,6 @@
 # Candidate Search Project
 
-A simple web UI for searching candidates in NocoDB by name.
+A simple web UI for searching candidates in NocoDB by name, with better search
 
 ## Quick Start
 
