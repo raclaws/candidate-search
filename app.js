@@ -361,7 +361,7 @@ function renderCandidateList(candidates) {
                 ${c['LinkedIn Link'] ? `<a href="${escapeHtml(c['LinkedIn Link'])}" target="_blank">LinkedIn</a>` : ''}
                 ${c['Upload CV'] ? `<a href="${escapeHtml(c['Upload CV'])}" target="_blank">CV</a>` : ''}
                 ${c['Portfolio Link (if any)'] ? `<a href="${escapeHtml(c['Portfolio Link (if any)'])}" target="_blank">Portfolio</a>` : ''}
-                ${c.DLink ? `<a href="${escapeHtml(c.DLink)}" target="_blank">Doss</a>` : ''}
+                <a href="/candidate/${c.Id}" target="_blank" class="share-link" onclick="event.preventDefault(); copyProfileLink(${c.Id}, this)">Share</a>
             </div>
         </div>`;
     }).join('');
@@ -397,6 +397,17 @@ function formatEmailLink(email) {
     if (!email) return null;
     if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return `mailto:${email.trim()}`;
     return null;
+}
+
+function copyProfileLink(id, el) {
+    const url = `${window.location.origin}/candidate/${id}`;
+    navigator.clipboard.writeText(url).then(() => {
+        const original = el.textContent;
+        el.textContent = 'Copied!';
+        setTimeout(() => { el.textContent = original; }, 1500);
+    }).catch(() => {
+        window.open(`/candidate/${id}`, '_blank');
+    });
 }
 
 // Event listeners
