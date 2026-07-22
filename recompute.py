@@ -382,12 +382,86 @@ def watch_mode():
             known_cvs = current_cvs
 
 
+def export_benchmark_json(output_path: str):
+    """Export distribution stats as JSON for the static benchmark page."""
+    import statistics as stats_mod
+    from collections import defaultdict
+
+    print(f"=== Export Benchmark JSON > {output_path} ===")
+    records = load_records()
+    cv_texts = load_cv_texts(records)
+    category_map = load_category_map()
+
+    categories = {}
+    confidences = {}
+    for r in records:
+        rid = r.get("id", r.get("Id"))
+        cv = cv_texts.get(rid, "")
+        cat, conf = resolve_company_category(cv, category_map)
+        if cat:
+            categories[rid] = cat
+            confidences[rid] = conf
+
+    ingestion_categories = {rid: cat for rid, cat in categories.items() if confidences.get(rid) == "matched"}
+    outputs, store = run_engine(records, cv_texts=cv_texts, company_categories=ingestion_categories)
+
+    buckets = defaultdict(lambda: {"percentiles": [], "labels": defaultdict(int), "categories": defaultdict(int)})
+
+    for i, record in enumerate(records):
+        rid = record.get("id", record.get("Id"))
+        output = outputs[i]
+        if output.salary_label.value in ("NO_INPUT", "INSUFFICIENT_DATA", "INVALID", ""):
+            continue
+        if output.role_bucket in ("UNKNOWN", ""):
+            continue
+
+        f = record.get("fields", record)
+        years_raw = f.get("Total Years of Experience", "")
+        yb = ""
+        try:
+            yb = compute_years_band(float(years_raw))
+        except (ValueError, TypeError):
+            continue
+
+        key = (output.role_bucket, yb)
+        buckets[key]["percentiles"].append(output.percentile or 0)
+        buckets[key]["labels"][output.salary_label.value] += 1
+        cat = categories.get(rid, "")
+        if cat:
+            buckets[key]["categories"][cat] += 1
+
+    results = []
+    for (role, band), data in sorted(buckets.items()):
+        pcts = data["percentiles"]
+        entry = {
+            "role": role,
+            "band": band,
+            "count": len(pcts),
+            "p25": round(stats_mod.quantiles(pcts, n=4)[0], 1) if len(pcts) >= 4 else None,
+            "p50": round(stats_mod.median(pcts), 1) if pcts else None,
+            "p75": round(stats_mod.quantiles(pcts, n=4)[2], 1) if len(pcts) >= 4 else None,
+            "distribution": dict(data["labels"]),
+            "categories": dict(data["categories"]),
+        }
+        results.append(entry)
+
+    roles = sorted(set(r["role"] for r in results))
+    bands = ["0-1yr", "1-3yr", "3-5yr", "5-8yr", "8yr+"]
+
+    out = {"buckets": results, "roles": roles, "bands": bands}
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(out, f, indent=2)
+    print(f"  {len(results)} buckets exported")
+    print("=== Done ===")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Signal Engine Recompute Worker")
     parser.add_argument("--full", action="store_true", help="Full recompute of all candidates")
     parser.add_argument("--incremental", type=int, metavar="NOCODB_ID", help="Incremental recompute for one candidate")
     parser.add_argument("--watch", action="store_true", help="Watch mode: poll for changes")
     parser.add_argument("--db", type=str, help="Path to interview.db (overrides SIGNAL_DB_PATH env)")
+    parser.add_argument("--export-json", type=str, metavar="PATH", help="Export benchmark stats as JSON for static site")
 
     args = parser.parse_args()
 
@@ -395,7 +469,9 @@ def main():
     if args.db:
         DB_PATH = args.db
 
-    if args.watch:
+    if args.export_json:
+        export_benchmark_json(args.export_json)
+    elif args.watch:
         watch_mode()
     elif args.incremental:
         incremental_recompute(args.incremental)
